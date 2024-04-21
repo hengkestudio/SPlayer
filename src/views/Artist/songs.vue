@@ -1,84 +1,94 @@
 <template>
-  <div class="songs">
-    <DataLists :listData="artistData" />
-    <n-space justify="center" v-if="artistData[0]">
-      <n-button
-        class="more"
+  <div class="artist-songs">
+    <Transition name="fade" mode="out-in">
+      <div v-if="artistAllSongs !== 'empty'" class="list">
+        <!-- 列表 -->
+        <SongList :data="artistAllSongs" :showPagination="false" />
+        <!-- 分页 -->
+        <Pagination
+          v-if="artistAllSongs?.length"
+          :totalCount="totalCount"
+          :pageNumber="pageNumber"
+          @pageNumberChange="pageNumberChange"
+        />
+      </div>
+      <n-empty
+        v-else
+        description="当前歌手暂无歌曲"
+        class="tip"
+        style="margin-top: 60px"
         size="large"
-        strong
-        secondary
-        round
-        @click="router.push(`/all-songs?id=${artistId}&page=1`)"
-      >
-        全部歌曲
-      </n-button>
-    </n-space>
+      />
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { getArtistSongs } from "@/api/artist";
 import { useRouter } from "vue-router";
-import { getSongTime } from "@/utils/timeTools.js";
-import DataLists from "@/components/DataList/DataLists.vue";
+import { siteSettings } from "@/stores";
+import { getSongDetail } from "@/api/song";
+import { getArtistAllSongs } from "@/api/artist";
+import formatData from "@/utils/formatData";
+
 const router = useRouter();
+const settings = siteSettings();
 
 // 歌手数据
 const artistId = ref(router.currentRoute.value.query.id);
-const artistData = ref([]);
+const artistAllSongs = ref(null);
+const totalCount = ref(0);
+const pageNumber = ref(Number(router.currentRoute.value.query?.page) || 1);
 
-// 获取歌手热门歌曲
-const getArtistSongsData = (id) => {
-  getArtistSongs(id).then((res) => {
-    console.log(res);
-    artistData.value = [];
-    res.hotSongs.forEach((v, i) => {
-      artistData.value.push({
-        id: v.id,
-        num: i + 1,
-        name: v.name,
-        artist: v.ar,
-        album: v.al,
-        alia: v.alia,
-        time: getSongTime(v.dt),
-        fee: v.fee,
-        pc: v.pc ? v.pc : null,
-        mv: v.mv ? v.mv : null,
-      });
-    });
+// 获取歌手全部歌曲
+const getArtistAllSongsData = async (id, limit = settings.loadSize, offset = 0) => {
+  try {
+    const result = await getArtistAllSongs(id, limit, offset);
+    // 数据总数
+    totalCount.value = result.total;
+    if (totalCount.value === 0) return (artistAllSongs.value = "empty");
+    // 处理数据
+    const ids = result.songs.map((song) => song.id).join(",");
+    const songsDetail = await getSongDetail(ids);
+    artistAllSongs.value = formatData(songsDetail.songs, "song");
+  } catch (error) {
+    console.error("获取歌手全部歌曲失败：", error);
+  }
+};
+
+// 页数变化
+const pageNumberChange = (page) => {
+  router.push({
+    path: "/artist/songs",
+    query: {
+      id: artistId.value,
+      page: page,
+    },
   });
 };
 
-onMounted(() => {
-  getArtistSongsData(artistId.value);
-});
-
-// 监听路由参数变化
+// 监听路由变化
 watch(
   () => router.currentRoute.value,
-  (val) => {
-    artistId.value = val.query.id;
-    if (val.name == "ar-songs") {
-      getArtistSongsData(artistId.value);
+  async (val) => {
+    if (val.name === "ar-songs") {
+      // 更改参数
+      artistId.value = val.query.id;
+      pageNumber.value = Number(val.query?.page) || 1;
+      // 调用接口
+      await getArtistAllSongsData(
+        artistId.value,
+        settings.loadSize,
+        (pageNumber.value - 1) * settings.loadSize,
+      );
     }
-  }
+  },
 );
-</script>
 
-<style lang="scss" scoped>
-.songs {
-  .more {
-    margin-top: 40px;
-    width: 140px;
-    font-size: 16px;
-    transition: all 0.3s;
-    &:hover {
-      background-color: $mainSecondaryColor;
-      color: $mainColor;
-    }
-    &:active {
-      transform: scale(0.95);
-    }
-  }
-}
-</style>
+onBeforeMount(async () => {
+  await getArtistAllSongsData(
+    artistId.value,
+    settings.loadSize,
+    (pageNumber.value - 1) * settings.loadSize,
+  );
+});
+</script>

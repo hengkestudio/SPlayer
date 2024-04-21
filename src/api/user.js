@@ -5,6 +5,33 @@ import axios from "@/utils/request";
  */
 
 /**
+ * 获取用户信息
+ */
+export const getUserProfile = () => {
+  return axios({
+    method: "GET",
+    url: "/user/account",
+    params: {
+      timestamp: new Date().getTime(),
+    },
+  });
+};
+
+/**
+ * 获取用户全部信息
+ */
+export const getUserDetail = (uid) => {
+  return axios({
+    method: "GET",
+    url: "/user/detail",
+    params: {
+      uid,
+      timestamp: new Date().getTime(),
+    },
+  });
+};
+
+/**
  * 获取用户等级信息
  */
 export const getUserLevel = () => {
@@ -18,7 +45,7 @@ export const getUserLevel = () => {
 };
 
 /**
- * 获取用户订阅信息，包括歌单、收藏、MV和DJ数量
+ * 获取用户订阅信息，包括歌单、收藏、MV 和 DJ 数量
  */
 export const getUserSubcount = () => {
   return axios({
@@ -69,10 +96,36 @@ export const getUserAlbum = (limit = 30, offset = 0) => {
 /**
  * 获取用户收藏的歌手列表
  */
-export const getUserArtistlist = () => {
+export const getUserArtist = () => {
   return axios({
     method: "GET",
     url: "/artist/sublist",
+    params: {
+      timestamp: new Date().getTime(),
+    },
+  });
+};
+
+/**
+ * 获取用户收藏的 MV 列表
+ */
+export const getUserMv = () => {
+  return axios({
+    method: "GET",
+    url: "/mv/sublist",
+    params: {
+      timestamp: new Date().getTime(),
+    },
+  });
+};
+
+/**
+ * 获取用户电台的订阅列表
+ */
+export const getUserDj = () => {
+  return axios({
+    method: "GET",
+    url: "/dj/sublist",
     params: {
       timestamp: new Date().getTime(),
     },
@@ -86,7 +139,6 @@ export const getUserArtistlist = () => {
 export const getLikelist = (uid) => {
   return axios({
     method: "GET",
-    hiddenBar: true,
     url: "/likelist",
     params: {
       uid,
@@ -103,87 +155,12 @@ export const getLikelist = (uid) => {
 export const setLikeSong = (id, like = true) => {
   return axios({
     method: "GET",
-    hiddenBar: true,
     url: "/like",
     params: {
       id,
       like,
       timestamp: new Date().getTime(),
     },
-  });
-};
-
-/**
- * 获取用户云盘数据
- * @param {number} [limit=30] - 返回数量，默认30
- * @param {number} [offset=0] - 偏移数量，默认0
- */
-export const getCloud = (limit = 30, offset = 0) => {
-  return axios({
-    method: "GET",
-    url: "/user/cloud",
-    params: {
-      limit,
-      offset,
-      timestamp: new Date().getTime(),
-    },
-  });
-};
-
-/**
- * 用户云盘歌曲删除
- * @param {string} id - 歌曲的id
- */
-export const setCloudDel = (id) => {
-  return axios({
-    method: "GET",
-    url: "/user/cloud/del",
-    params: {
-      id,
-      timestamp: new Date().getTime(),
-    },
-  });
-};
-
-/**
- * 云盘歌曲信息匹配纠正
- * @param {string} uid - 用户id
- * @param {string} sid - 原歌曲id
- * @param {string} asid - 要匹配的歌曲id
- */
-export const setCloudMatch = (uid, sid, asid) => {
-  return axios({
-    method: "GET",
-    url: "/cloud/match",
-    params: {
-      uid,
-      sid,
-      asid,
-      timestamp: new Date().getTime(),
-    },
-  });
-};
-
-/**
- * 用户云盘上传
- * @param {File} file - 要上传的文件
- */
-export const upCloudSong = (file, onUploadProgress) => {
-  const formData = new FormData();
-  formData.append("songFile", file);
-  return axios({
-    url: "/cloud",
-    method: "POST",
-    hiddenBar: true,
-    params: {
-      timestamp: new Date().getTime(),
-    },
-    data: formData,
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
-    timeout: 200000,
-    onUploadProgress,
   });
 };
 

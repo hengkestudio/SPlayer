@@ -1,253 +1,240 @@
 <template>
   <Provider>
-    <n-layout style="height: 100vh">
+    <!-- 主框架 -->
+    <n-layout :class="['all-layout', { 'full-player': showFullPlayer }]">
+      <!-- 导航栏 -->
       <n-layout-header bordered>
-        <Nav />
+        <MainNav />
       </n-layout-header>
-      <n-layout-content
+      <!-- 主内容 - 有侧边栏 -->
+      <n-layout
+        v-if="showSider"
+        :class="{
+          'body-layout': true,
+          'player-bar': Object.keys(music.getPlaySongData)?.length && showPlayBar,
+        }"
         position="absolute"
-        :class="music.getPlaylists[0] && music.showPlayBar ? 'show' : ''"
+        has-sider
+      >
+        <!-- 侧边栏 -->
+        <n-layout-sider
+          :collapsed="asideMenuCollapsed"
+          :native-scrollbar="false"
+          :collapsed-width="64"
+          :width="240"
+          class="main-sider"
+          show-trigger="bar"
+          collapse-mode="width"
+          bordered
+          @collapse="asideMenuCollapsed = true"
+          @expand="asideMenuCollapsed = false"
+        >
+          <div class="sider-all">
+            <Menu />
+          </div>
+        </n-layout-sider>
+        <!-- 页面区 -->
+        <n-layout :native-scrollbar="false" embedded>
+          <MainLayout />
+        </n-layout>
+      </n-layout>
+      <!-- 主内容 - 无侧边栏 -->
+      <n-layout-content
+        v-else
+        :class="{
+          'body-layout': true,
+          'player-bar': Object.keys(music.getPlaySongData)?.length && showPlayBar,
+        }"
         :native-scrollbar="false"
+        position="absolute"
         embedded
       >
-        <main
-          ref="mainContent"
-          class="main"
-          id="main"
-          :class="[music.showPlayList ? 'playlist' : null]"
-        >
-          <n-back-top
-            :bottom="music.getPlaylists[0] && music.showPlayBar ? 100 : 40"
-            style="transition: all 0.3s"
-          />
-          <router-view v-slot="{ Component }">
-            <keep-alive>
-              <Transition name="scale" mode="out-in">
-                <component :is="Component" />
-              </Transition>
-            </keep-alive>
-          </router-view>
-          <Player />
-        </main>
+        <MainLayout />
       </n-layout-content>
     </n-layout>
+    <!-- 主播放器 -->
+    <MainControl />
+    <!-- 全屏播放器 -->
+    <FullPlayer />
+    <!-- 全局播放列表 -->
+    <n-config-provider v-if="showFullPlayer" :theme="darkTheme">
+      <Playlist />
+    </n-config-provider>
+    <Playlist v-else />
+    <!-- 全局水印 -->
+    <!-- <n-watermark
+      :font-size="16"
+      :line-height="16"
+      :width="384"
+      :height="384"
+      :x-offset="12"
+      :y-offset="60"
+      :rotate="-15"
+      content="开发中，敬请期待"
+      cross
+      fullscreen
+    /> -->
   </Provider>
 </template>
 
 <script setup>
-import { musicStore, userStore, settingStore } from "@/store";
+import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
-import { getLoginState, refreshLogin } from "@/api/login";
-import { userDailySignin, userYunbeiSign } from "@/api/user";
-import Provider from "@/components/Provider/index.vue";
-import Nav from "@/components/Nav/index.vue";
-import Player from "@/components/Player/index.vue";
+import { darkTheme, NButton } from "naive-ui";
+import { musicData, siteStatus, siteSettings } from "@/stores";
+import { checkPlatform } from "@/utils/helper";
+import { initPlayer } from "@/utils/Player";
+import userSignIn from "@/utils/userSignIn";
+import globalShortcut from "@/utils/globalShortcut";
+import globalEvents from "@/utils/globalEvents";
 import packageJson from "@/../package.json";
 
-const music = musicStore();
-const user = userStore();
-const setting = settingStore();
 const router = useRouter();
-const mainContent = ref(null);
+const music = musicData();
+const status = siteStatus();
+const settings = siteSettings();
+const { autoPlay, showSider, autoSignIn } = storeToRefs(settings);
+const { showPlayBar, asideMenuCollapsed, showFullPlayer } = storeToRefs(status);
 
 // 公告数据
 const annShow =
-  import.meta.env.VITE_ANN_TITLE && import.meta.env.VITE_ANN_CONTENT
+  import.meta.env.RENDERER_VITE_ANN_TITLE && import.meta.env.RENDERER_VITE_ANN_CONTENT
     ? true
     : false;
-const annTitle = import.meta.env.VITE_ANN_TITLE;
-const annContene = import.meta.env.VITE_ANN_CONTENT;
-const annDuration = Number(import.meta.env.VITE_ANN_DURATION);
+const annType = import.meta.env.RENDERER_VITE_ANN_TYPE;
+const annTitle = import.meta.env.RENDERER_VITE_ANN_TITLE;
+const annContene = import.meta.env.RENDERER_VITE_ANN_CONTENT;
+const annDuration = Number(import.meta.env.RENDERER_VITE_ANN_DURATION);
 
-// 空格暂停与播放
-const spacePlayOrPause = (e) => {
-  if (e.code === "Space") {
-    console.log(e.target.tagName);
-    if (router.currentRoute.value.name === "video") return false;
-    if (e.target.tagName === "BODY") {
-      e.preventDefault();
-      music.setPlayState(!music.getPlayState);
-    } else {
-      return false;
-    }
-  }
-};
-
-// 更改页面标题
-const setSiteTitle = (val) => {
-  const title = val
-    ? val === "SPlayer"
-      ? val
-      : val + " - SPlayer"
-    : user.siteTitle;
-  user.setSiteTitle(title);
-  sessionStorage.setItem("siteTitle", title);
-  if (!music.getPlayState) {
-    window.document.title = title;
-  }
-};
-
-// 刷新登录
-const toRefreshLogin = () => {
-  const today = Date.now();
-  const threeDays = 3 * 24 * 60 * 60 * 1000;
-  const lastRefreshDate = new Date(
-    localStorage.getItem("lastRefreshDate")
-  ).getTime();
-  if (today - lastRefreshDate >= threeDays || !lastRefreshDate) {
-    refreshLogin().then((res) => {
-      if (res.code === 200) {
-        localStorage.setItem(
-          "lastRefreshDate",
-          new Date(today).toLocaleDateString()
-        );
-        console.log("刷新登录成功");
-      } else {
-        console.error("刷新登录失败");
-      }
-    });
-  }
-};
-
-// 用户签到
-const signIn = () => {
-  const today = new Date().toLocaleDateString();
-  const lastSignInDate = localStorage.getItem("lastSignInDate");
-  if (lastSignInDate !== today) {
-    const signInPromises = [userDailySignin(0), userYunbeiSign()];
-    Promise.all(signInPromises)
-      .then((results) => {
-        localStorage.setItem("lastSignInDate", today);
-        console.log("签到成功！");
-        console.log("userDailySignin:", results[0]);
-        console.log("userYunbeiSign:", results[1]);
-        $notification["success"]({
-          content: "签到成功",
-          meta: "每日签到及云贝签到成功",
-          duration: 3000,
-        });
-      })
-      .catch((error) => {
-        console.error("签到失败：", error);
-        $message.error("每日签到失败");
+// PWA
+if ("serviceWorker" in navigator) {
+  // 更新完成提醒
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (checkPlatform.electron()) {
+      $notification.create({
+        title: "🎉 有更新啦",
+        content: "检测到软件内资源有更新，是否重新启动软件以应用更新？",
+        meta: "当前版本 v " + (packageJson.version || "1.0.0"),
+        action: () =>
+          h(
+            NButton,
+            {
+              text: true,
+              type: "primary",
+              onClick: () => {
+                electron.ipcRenderer.send("window-relaunch");
+              },
+            },
+            {
+              default: () => "更新",
+            },
+          ),
+        onAfterLeave: () => {
+          $message.info("已取消本次更新，更新将在下次启动软件后生效", {
+            duration: 6000,
+          });
+        },
       });
-  } else {
-    console.log("今天已经签到过了！");
-  }
-};
+    } else {
+      console.info("站点资源有更新，请刷新以应用更新");
+      $message.info("站点资源有更新，请刷新以应用更新", {
+        closable: true,
+        duration: 0,
+      });
+    }
+  });
+}
 
-// 系统重置
-const cleanAll = () => {
-  $message ? $message.success("重置成功") : alert("重置成功");
-  localStorage.clear();
-  window.location.href = "/";
-};
-
-onMounted(() => {
-  // 挂载至全局
-  window.$mainContent = mainContent.value;
-  window.$cleanAll = cleanAll;
-  window.$signIn = signIn;
-  window.$setSiteTitle = setSiteTitle;
-
-  // 公告
+// 显示公告
+const showAnnouncements = () => {
   if (annShow) {
-    $notification["info"]({
+    $notification[annType]({
       content: annTitle,
       meta: annContene,
       duration: annDuration,
     });
   }
+};
 
-  // 版权声明
-  const logoText = "SPlayer";
-  const copyrightNotice = `\n\n版本: ${packageJson.version}\n作者: ${packageJson.author}\n作者主页: ${packageJson.home}\nGitHub: ${packageJson.github}`;
-  console.info(
-    `%c${logoText} %c ${copyrightNotice}`,
-    "color:#f55e55;font-size:26px;font-weight:bold;",
-    "font-size:16px"
-  );
-  console.info(
-    "若站点出现异常，可尝试在下方输入 %c$cleanAll()%c 然后按回车来重置",
-    "background: #eaeffd;color:#f55e55;padding: 4px 6px;border-radius:8px;",
-    "background:unset;color:unset;"
-  );
+// 网络无法连接
+const canNotConnect = (error) => {
+  console.error("网络连接错误：", error.message);
+  $dialog.destroyAll();
+  $dialog.error({
+    title: "网络连接错误",
+    content: "网络连接错误，请检查您当前的网络状态",
+    positiveText: "重试",
+    negativeText: checkPlatform.electron() ? "前往本地歌曲" : "取消",
+    onPositiveClick: () => {
+      location.reload();
+    },
+    onNegativeClick: () => {
+      if (checkPlatform.electron()) router.push("/local");
+    },
+  });
+};
 
-  // 检查账号登录状态
-  getLoginState()
-    .then((res) => {
-      if (res.data.profile && user.userLogin) {
-        // 签到
-        if (setting.autoSignIn) signIn();
-        // 刷新登录
-        toRefreshLogin();
-        // 保存登录信息
-        user.userLogin = true;
-        user.setUserData(res.data.profile);
-        user.setUserOtherData();
-      } else {
-        user.userLogOut();
-        if (music.getPlayListMode === "cloud") {
-          $message.info("登录已失效，请重新登录");
-          music.setPlaylists([]);
-        }
-      }
-    })
-    .catch((err) => {
-      $message.error("请求发生错误");
-      console.error("请求发生错误" + err);
-      router.push("/500");
-      return false;
-    });
+// 网页端键盘事件
+const handleKeyUp = (event) => {
+  globalShortcut(event, router);
+};
 
-  // 获取喜欢音乐列表
-  music.setLikeList();
-
+onMounted(async () => {
+  // 挂载方法
+  window.$canNotConnect = canNotConnect;
+  // 主播放器
+  await initPlayer(autoPlay.value);
+  // 全局事件
+  globalEvents(router);
   // 键盘监听
-  window.addEventListener("keydown", spacePlayOrPause);
+  if (!checkPlatform.electron()) {
+    window.addEventListener("keyup", handleKeyUp);
+  }
+  // 自动签到
+  if (autoSignIn.value) await userSignIn();
+  // 显示公告
+  showAnnouncements();
+});
+
+onUnmounted(() => {
+  if (!checkPlatform.electron()) window.removeEventListener("keyup", handleKeyUp);
 });
 </script>
 
 <style lang="scss" scoped>
-.n-layout-header {
-  height: 60px;
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-}
-.n-layout-content {
-  top: 60px;
-  transition: all 0.3s;
-  &.show {
-    bottom: 70px;
+.all-layout {
+  height: 100%;
+  transition:
+    transform 0.3s,
+    opacity 0.3s;
+  .n-layout-header {
+    height: 60px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    -webkit-app-region: drag;
   }
-  :deep(.n-scrollbar-rail--vertical) {
-    right: 0;
-  }
-  .main {
-    max-width: 1400px;
-    margin: 0 auto;
-    div:nth-of-type(2) {
-      transition: all 0.3s;
-    }
-    &.playlist {
-      div:nth-of-type(2) {
-        transform: scale(0.98);
+  .body-layout {
+    top: 60px;
+    transition: bottom 0.3s;
+    .main-sider {
+      :deep(.n-scrollbar-content) {
+        height: 100%;
+      }
+      .sider-all {
+        height: 100%;
+      }
+      @media (max-width: 720px) {
+        display: none;
       }
     }
+    &.player-bar {
+      bottom: 80px;
+    }
   }
-}
-
-// 路由跳转动画
-.scale-enter-active,
-.scale-leave-active {
-  transition: all 0.2s ease;
-}
-
-.scale-enter-from,
-.scale-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
+  &.full-player {
+    opacity: 0;
+    transform: scale(0.9);
+  }
 }
 </style>

@@ -1,109 +1,86 @@
+<!-- 搜索 -->
 <template>
   <div class="search">
-    <div class="title" v-if="searchKeywords">
-      <span class="key">{{ searchKeywords }}</span>
-      <span>的搜索结果</span>
-    </div>
-    <div class="title" v-else>
-      <span class="key">未提供搜索关键字</span>
-      <br />
-      <n-button
-        strong
-        secondary
-        @click="router.go(-1)"
-        style="margin-top: 20px"
-      >
-        返回上一级
-      </n-button>
-    </div>
-    <n-tabs
-      class="main-tab"
-      type="line"
-      @update:value="tabChange"
-      v-model:value="tabValue"
-      v-if="searchKeywords"
-    >
-      <n-tab name="songs"> 单曲 </n-tab>
-      <n-tab name="artists"> 歌手 </n-tab>
-      <n-tab name="albums"> 专辑 </n-tab>
-      <n-tab name="videos"> 视频 </n-tab>
-      <n-tab name="playlists"> 歌单 </n-tab>
-    </n-tabs>
-    <main class="content" v-if="searchKeywords">
+    <template v-if="searchKeywords">
+      <div class="title">
+        <n-text class="key">{{ searchKeywords }}</n-text>
+        <n-text depth="3">的相关搜索</n-text>
+      </div>
+      <!-- 标签页 -->
+      <n-tabs v-model:value="tabValue" class="tabs" type="line" @update:value="tabChange">
+        <n-tab name="sea-songs"> 单曲 </n-tab>
+        <n-tab name="sea-artists"> 歌手 </n-tab>
+        <n-tab name="sea-albums"> 专辑 </n-tab>
+        <n-tab name="sea-playlists"> 歌单 </n-tab>
+        <n-tab name="sea-videos"> 视频 </n-tab>
+        <n-tab name="sea-djs"> 电台 </n-tab>
+      </n-tabs>
+      <!-- 路由页面 -->
       <router-view v-slot="{ Component }">
         <keep-alive>
-          <Transition name="move" mode="out-in">
+          <Transition name="router" mode="out-in">
             <component :is="Component" />
           </Transition>
         </keep-alive>
       </router-view>
-    </main>
+    </template>
+    <template v-else>
+      <div class="title">
+        <n-text class="key">参数不完整</n-text>
+      </div>
+      <n-button class="back" strong secondary @click="router.go(-1)"> 返回上一页 </n-button>
+    </template>
   </div>
 </template>
 
 <script setup>
 import { useRouter } from "vue-router";
+
 const router = useRouter();
 
-// 搜索关键词
+// 搜索数据
 const searchKeywords = ref(router.currentRoute.value.query.keywords);
 
-// Tab 默认选中
-const tabValue = ref(router.currentRoute.value.path.split("/")[2]);
+// 默认选中
+const tabValue = ref(router.currentRoute.value?.name ?? "sea-songs");
 
-// 监听路由参数变化
-watch(
-  () => router.currentRoute.value,
-  (val) => {
-    $setSiteTitle(val.query.keywords + "的搜索结果");
-    searchKeywords.value = val.query.keywords;
-    tabValue.value = val.path.split("/")[2];
-  }
-);
-
-// Tab 选项卡变化
-const tabChange = (value) => {
-  console.log(value);
+// 标签页切换
+const tabChange = (val) => {
+  const routerPath = val.replace(/^sea-/, "");
   router.push({
-    path: `/search/${value}`,
+    path: `/search/${routerPath}`,
     query: {
       keywords: searchKeywords.value,
-      page: 1,
     },
   });
 };
 
-onMounted(() => {
-  $setSiteTitle(searchKeywords.value + "的搜索结果");
-});
+// 监听路由变化
+watch(
+  () => router.currentRoute.value,
+  (val) => {
+    searchKeywords.value = val.query?.keywords;
+    tabValue.value = val?.name ?? "sea-songs";
+  },
+);
 </script>
 
 <style lang="scss" scoped>
 .search {
   .title {
-    margin-top: 30px;
-    margin-bottom: 20px;
-    font-size: 24px;
+    margin: 10px 0;
+    font-size: 22px;
     .key {
-      font-size: 40px;
+      font-size: 36px;
       font-weight: bold;
       margin-right: 8px;
     }
+    .n-text {
+      display: inline;
+    }
   }
-  .content {
-    margin-top: 20px;
+  .tabs {
+    margin-bottom: 20px;
   }
-}
-
-// 路由跳转动画
-.move-enter-active,
-.move-leave-active {
-  transition: all 0.2s ease;
-}
-
-.move-enter-from,
-.move-leave-to {
-  opacity: 0;
-  transform: translateX(10px);
 }
 </style>

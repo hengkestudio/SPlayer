@@ -1,109 +1,92 @@
 <template>
-  <div class="albums">
-    <CoverLists :listData="artistData" listType="album" />
-    <Pagination
-      :totalCount="totalCount"
-      :pageNumber="pageNumber"
-      @pageSizeChange="pageSizeChange"
-      @pageNumberChange="pageNumberChange"
-    />
+  <div class="artist-albums">
+    <Transition name="fade" mode="out-in">
+      <div v-if="artistAblums !== 'empty'" class="list">
+        <!-- 列表 -->
+        <MainCover :data="artistAblums" type="album" />
+        <!-- 分页 -->
+        <Pagination
+          v-if="artistAblums?.length"
+          :totalCount="totalCount"
+          :pageNumber="pageNumber"
+          @pageNumberChange="pageNumberChange"
+        />
+      </div>
+      <n-empty
+        v-else
+        description="当前歌手暂无专辑"
+        class="tip"
+        style="margin-top: 60px"
+        size="large"
+      />
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { getArtistAblums } from "@/api/artist";
 import { useRouter } from "vue-router";
-import { getLongTime } from "@/utils/timeTools.js";
-import CoverLists from "@/components/DataList/CoverLists.vue";
-import Pagination from "@/components/Pagination/index.vue";
+import { siteSettings } from "@/stores";
+import { getArtistAblums } from "@/api/artist";
+import formatData from "@/utils/formatData";
+
 const router = useRouter();
+const settings = siteSettings();
 
 // 歌手数据
 const artistId = ref(router.currentRoute.value.query.id);
-const artistData = ref([]);
-const pagelimit = ref(30);
-const pageNumber = ref(
-  router.currentRoute.value.query.page
-    ? Number(router.currentRoute.value.query.page)
-    : 1
-);
+const artistAblums = ref(null);
 const totalCount = ref(0);
+const pageNumber = ref(Number(router.currentRoute.value.query?.page) || 1);
 
-// 获取歌手专辑
-const getArtistAblumsData = (id, limit = 30, offset = 0) => {
-  getArtistAblums(id, limit, offset).then((res) => {
-    console.log(res);
+// 获取歌手全部专辑
+const getArtistAblumsData = async (id, limit = settings.loadSize, offset = 0) => {
+  try {
+    artistAblums.value = null;
+    const result = await getArtistAblums(id, limit, offset);
     // 数据总数
-    totalCount.value = res.artist.albumSize;
-    // 列表数据
-    artistData.value = [];
-    if (res.hotAlbums) {
-      res.hotAlbums.forEach((v) => {
-        artistData.value.push({
-          id: v.id,
-          cover: v.picUrl,
-          name: v.name,
-          artist: v.artists,
-          time: getLongTime(v.publishTime),
-        });
-      });
-    } else {
-      $message.error("搜索内容为空");
-    }
-    // 请求后回顶
-    if ($mainContent) $mainContent.scrollIntoView({ behavior: "smooth" });
-  });
+    totalCount.value = result.artist.albumSize;
+    if (totalCount.value === 0) return (artistAblums.value = "empty");
+    // 处理数据
+    artistAblums.value = formatData(result.hotAlbums, "album");
+  } catch (error) {
+    console.error("获取歌手专辑失败：", error);
+  }
 };
 
-// 当前页数数据变化
-const pageNumberChange = (val) => {
+// 页数变化
+const pageNumberChange = (page) => {
   router.push({
     path: "/artist/albums",
     query: {
       id: artistId.value,
-      page: val,
+      page: page,
     },
   });
 };
 
-// 每页个数数据变化
-const pageSizeChange = (val) => {
-  console.log(val);
-  pagelimit.value = val;
-  getArtistAblumsData(
-    artistId.value,
-    val,
-    (pageNumber.value - 1) * pagelimit.value
-  );
-};
-
-onMounted(() => {
-  getArtistAblumsData(
-    artistId.value,
-    pagelimit.value,
-    (pageNumber.value - 1) * pagelimit.value
-  );
-});
-
-// 监听路由参数变化
+// 监听路由变化
 watch(
   () => router.currentRoute.value,
-  (val) => {
-    artistId.value = val.query.id;
-    pageNumber.value = Number(val.query.page ? val.query.page : 1);
-    if (val.name == "ar-albums") {
-      getArtistAblumsData(
+  async (val) => {
+    if (val.name === "ar-albums") {
+      // 更改参数
+      artistId.value = val.query.id;
+      pageNumber.value = Number(val.query?.page) || 1;
+      // 调用接口
+      await getArtistAblumsData(
         artistId.value,
-        pagelimit.value,
-        (pageNumber.value - 1) * pagelimit.value
+        settings.loadSize,
+        (pageNumber.value - 1) * settings.loadSize,
       );
     }
-  }
+  },
 );
-</script>
 
-<style lang="scss" scoped>
-.albums {
-  padding-top: 10px;
-}
-</style>
+onBeforeMount(async () => {
+  await getArtistAblumsData(
+    artistId.value,
+    settings.loadSize,
+    (pageNumber.value - 1) * settings.loadSize,
+  );
+});
+</script>

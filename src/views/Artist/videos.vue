@@ -1,23 +1,36 @@
 <template>
-  <div class="videos">
-    <VideoLists :listData="artistData" />
-    <Pagination
-      :totalCount="totalCount"
-      :pageNumber="pageNumber"
-      @pageSizeChange="pageSizeChange"
-      @pageNumberChange="pageNumberChange"
-    />
+  <div class="artist-videos">
+    <Transition name="fade" mode="out-in">
+      <div v-if="artistVideos !== 'empty'" class="list">
+        <!-- 列表 -->
+        <MainCover :data="artistVideos" columns="1 s:2 m:3 l:4 xl:5" type="mv" />
+        <!-- 分页 -->
+        <Pagination
+          v-if="artistVideos?.length"
+          :totalCount="totalCount"
+          :pageNumber="pageNumber"
+          @pageNumberChange="pageNumberChange"
+        />
+      </div>
+      <n-empty
+        v-else
+        description="当前歌手暂无视频"
+        class="tip"
+        style="margin-top: 60px"
+        size="large"
+      />
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { getArtistVideos } from "@/api/artist";
 import { useRouter } from "vue-router";
-import { formatNumber, getSongTime } from "@/utils/timeTools.js";
-import VideoLists from "@/components/DataList/VideoLists.vue";
-import Pagination from "@/components/Pagination/index.vue";
+import { siteSettings } from "@/stores";
+import { getArtistVideos } from "@/api/artist";
+import formatData from "@/utils/formatData";
 
 const router = useRouter();
+const settings = siteSettings();
 const props = defineProps({
   // 视频总数
   mvSize: {
@@ -28,85 +41,59 @@ const props = defineProps({
 
 // 歌手数据
 const artistId = ref(router.currentRoute.value.query.id);
-const artistData = ref([]);
-const pagelimit = ref(30);
-const pageNumber = ref(
-  router.currentRoute.value.query.page
-    ? Number(router.currentRoute.value.query.page)
-    : 1
-);
+const artistVideos = ref(null);
 const totalCount = ref(0);
+const pageNumber = ref(Number(router.currentRoute.value.query?.page) || 1);
 
-// 获取歌手视频
-const getArtistVideosData = (id, limit = 30, offset = 0) => {
-  getArtistVideos(id, limit, offset).then((res) => {
-    console.log(res);
+// 获取歌手全部视频
+const getArtistVideosData = async (id, limit = settings.loadSize, offset = 0) => {
+  try {
+    artistVideos.value = null;
+    const result = await getArtistVideos(id, limit, offset);
     // 数据总数
     totalCount.value = props.mvSize;
-    // 列表数据
-    artistData.value = [];
-    if (res.mvs) {
-      res.mvs.forEach((v) => {
-        artistData.value.push({
-          id: v.id,
-          cover: v.imgurl16v9,
-          name: v.name,
-          artist: [v.artist],
-          playCount: formatNumber(v.playCount),
-          duration: getSongTime(v.duration),
-        });
-      });
-    } else {
-      $message.error("搜索内容为空");
-    }
-    // 请求后回顶并结束加载条
-    if ($mainContent) $mainContent.scrollIntoView({ behavior: "smooth" });
-  });
+    if (totalCount.value === 0) return (artistVideos.value = "empty");
+    // 处理数据
+    artistVideos.value = formatData(result.mvs, "mv");
+  } catch (error) {
+    console.error("获取歌手视频失败：", error);
+  }
 };
 
-// 当前页数数据变化
-const pageNumberChange = (val) => {
+// 页数变化
+const pageNumberChange = (page) => {
   router.push({
     path: "/artist/videos",
     query: {
       id: artistId.value,
-      page: val,
+      page: page,
     },
   });
 };
 
-// 每页个数数据变化
-const pageSizeChange = (val) => {
-  console.log(val);
-  pagelimit.value = val;
-  getArtistVideosData(
-    artistId.value,
-    val,
-    (pageNumber.value - 1) * pagelimit.value
-  );
-};
-
-onMounted(() => {
-  getArtistVideosData(
-    artistId.value,
-    pagelimit.value,
-    (pageNumber.value - 1) * pagelimit.value
-  );
-});
-
-// 监听路由参数变化
+// 监听路由变化
 watch(
   () => router.currentRoute.value,
-  (val) => {
-    artistId.value = val.query.id;
-    pageNumber.value = Number(val.query.page ? val.query.page : 1);
-    if (val.name == "ar-videos") {
-      getArtistVideosData(
+  async (val) => {
+    if (val.name === "ar-videos") {
+      // 更改参数
+      artistId.value = val.query.id;
+      pageNumber.value = Number(val.query?.page) || 1;
+      // 调用接口
+      await getArtistVideosData(
         artistId.value,
-        pagelimit.value,
-        (pageNumber.value - 1) * pagelimit.value
+        settings.loadSize,
+        (pageNumber.value - 1) * settings.loadSize,
       );
     }
-  }
+  },
 );
+
+onBeforeMount(async () => {
+  await getArtistVideosData(
+    artistId.value,
+    settings.loadSize,
+    (pageNumber.value - 1) * settings.loadSize,
+  );
+});
 </script>
